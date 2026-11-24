@@ -278,8 +278,8 @@ function entryWhere(q, category) {
   const params = [];
   if (q !== '') {
     const like = '%' + q + '%';
-    clauses.push('(site LIKE ? OR url LIKE ? OR account LIKE ? OR note LIKE ?)');
-    params.push(like, like, like, like);
+    clauses.push('(site LIKE ? OR url LIKE ? OR account LIKE ? OR note LIKE ? OR category LIKE ?)');
+    params.push(like, like, like, like, like);
   }
   if (category !== '') {
     clauses.push('category = ?');
@@ -943,7 +943,7 @@ async function handleIndex(env, session, request, url) {
       <label for="q" class="sr-only">搜索</label>
       <div class="search-box">
         ${searchSvg()}
-        <input id="q" name="q" value="${h(q)}" placeholder="搜索网站、网址、账号、备注" autocomplete="off">
+        <input id="q" name="q" value="${h(q)}" placeholder="搜索网站、网址、账号、备注、分类" autocomplete="off">
       </div>
       <label for="cat" class="sr-only">按分类筛选</label>
       <select id="cat" name="cat" class="ctl">
