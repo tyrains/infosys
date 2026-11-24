@@ -11,7 +11,7 @@ fallthrough = true
 [[d1_databases]]
 binding = "DB"
 database_name = "infosys-db"
-database_id = "PLACEHOLDER_D1_ID"
+database_id = "0e42a2ad-1749-4b24-97c6-969160fff303"
 
 # 可选：会话默认存 D1 的 sessions 表。若日后建好 KV 命名空间，
 # 取消下面注释并填入 id，会话会自动改走 KV（代码已适配）。
