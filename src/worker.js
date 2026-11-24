@@ -6,8 +6,8 @@ import cssText from './style.css';
 
 const SESSION_COOKIE = 'INFOSYSSESS';
 const SESSION_TTL = 7 * 24 * 3600; // 会话存活时间（秒），写入时滑动续期
-const PBKDF2_ITER_PW = 600000;     // 主密码哈希迭代次数
-const PBKDF2_ITER_WRAP = 300000;   // DK 包装密钥派生迭代次数（与原 PHP 回退方案一致）
+const PBKDF2_ITER_PW = 100000;     // 主密码哈希迭代次数（Workers 的 WebCrypto PBKDF2 上限为 10 万次）
+const PBKDF2_ITER_WRAP = 100000;   // DK 包装密钥派生迭代次数（同上）
 const BACKUP_VERSION = 1;
 const BACKUP_MAX_BYTES = 10485760; // 10 MB
 const BACKUP_MAX_RECORDS = 10000;

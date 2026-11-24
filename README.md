@@ -23,7 +23,7 @@
 
 ## 安全说明
 
-- 主密码以 PBKDF2-SHA256（60 万次迭代）哈希存储；私密信息数据密钥 DK 由主密码经 PBKDF2-SHA256（30 万次）派生密钥包装，改密码只重新包装 DK，备注密文不动。
+- 主密码以 PBKDF2-SHA256（10 万次迭代，Workers 的 WebCrypto 上限）哈希存储；私密信息数据密钥 DK 由主密码经 PBKDF2-SHA256（10 万次）派生密钥包装，改密码只重新包装 DK，备注密文不动。
 - 备注密文格式 `base64(nonce12 + tag16 + 密文)`，与原 PHP 版一致。
 - 所有 SQL 走参数绑定；所有输出经 HTML 转义；所有 POST 带 CSRF token 校验。
 - 会话 cookie：HttpOnly + Secure + SameSite=Strict；登录后页面响应带 `Cache-Control: no-store`；全站 `noindex,nofollow`。
