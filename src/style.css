@@ -210,6 +210,7 @@ table.entries td {
   font-size: 13px; vertical-align: top; line-height: 1.45;
 }
 table.entries tbody tr:last-child td { border-bottom: 0; }
+table.entries tbody tr[data-open] { cursor: pointer; }
 table.entries tbody tr.active td { background: var(--row-highlight); }
 table.entries tbody tr.active td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
@@ -475,12 +476,27 @@ body.modal-open { overflow: hidden; }
 }
 
 /* ---------- 响应式 ---------- */
+.back-to-list { display: none; }
+
 @media (max-width: 900px) {
   .wrap { padding: 16px; }
   .layout { flex-direction: column; }
   .list-card, .editor { flex: 1 1 auto; width: 100%; max-width: none; }
+  .layout.editing .editor { order: -1; }
+  .back-to-list { display: inline-block; margin-bottom: 10px; font-size: 14px; }
   .top-right { align-items: stretch; width: 100%; }
   .top-flash { max-width: none; }
+}
+
+/* 手机列表：去掉表格最小宽度，隐藏「修改于」列（整行可点进详情，编辑/删除在详情里） */
+@media (max-width: 700px) {
+  .list-card { overflow-x: visible; }
+  table.entries { min-width: 0; }
+  table.entries th, table.entries td { padding: 8px; }
+  table.entries th:last-child, table.entries td:last-child { display: none; }
+  table.entries:not(.vault-table) td:nth-child(3) { word-break: break-all; }
+  table.entries:not(.vault-table) tbody td:nth-child(5)::after { content: ' ›'; color: var(--text-muted); }
+  table.vault-table tbody td:nth-child(2)::after { content: ' ›'; color: var(--text-muted); }
 }
 
 @media (max-width: 560px) {

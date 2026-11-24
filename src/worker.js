@@ -724,6 +724,18 @@ const MODAL_SCRIPT = (autoOpen) => `<script>
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape' && !modal.hidden) { close(); }
   });
+  // 整行可点：点条目行任意位置打开该条详情（点行内的链接、按钮、表单时不触发）
+  document.querySelectorAll('tr[data-open]').forEach(function (tr) {
+    tr.addEventListener('click', function (e) {
+      if (e.target.closest('a, button, form, input, textarea, select, label')) { return; }
+      window.location.href = tr.getAttribute('data-open');
+    });
+  });
+  // 窄屏编辑时把编辑区滚到眼前
+  if (window.location.search.indexOf('edit=') !== -1 && window.matchMedia('(max-width: 900px)').matches) {
+    var ed = document.querySelector('.layout.editing .editor');
+    if (ed) { ed.scrollIntoView(); }
+  }
   ${autoOpen ? 'open();' : ''}
 })();
 </script>`;
@@ -956,7 +968,7 @@ async function handleIndex(env, session, request, url) {
     <button type="button" class="btn btn-primary" data-open-add>添加记录</button>
   </div>
 
-  <div class="layout">
+  <div class="layout${editing ? ' editing' : ''}">
     <div class="list-card">`;
 
   if (rows.length === 0) {
@@ -970,7 +982,7 @@ async function handleIndex(env, session, request, url) {
     for (const row of rows) {
       const rid = Number(row.id);
       const link = safeUrl(String(row.url));
-      body += `<tr class="${editing && rid === editId ? 'active' : ''}">
+      body += `<tr data-open="index.php?edit=${rid}" class="${editing && rid === editId ? 'active' : ''}">
                 <td class="seq-cell" title="序号 ${seqNo(Number(row.seq))}">${seqNo(Number(row.seq))}</td>
                 <td>${link !== ''
                   ? `<a class="site-link" href="${h(link)}" target="_blank" rel="noopener noreferrer">${h(row.site)}</a>`
@@ -1010,6 +1022,7 @@ async function handleIndex(env, session, request, url) {
   } else {
     const editSeq = await entrySeq(db, editId);
     body += `<div class="editor">
+      <a class="back-to-list" href="index.php">&larr; 返回列表</a>
       <div class="editor-head">
         <span class="seq-badge">序号 ${seqNo(editSeq)}</span>
         <span class="who">${h(editing.site)}</span>
@@ -1325,7 +1338,7 @@ async function handleVault(env, session, request, url) {
     <button type="button" class="btn btn-primary" data-open-add>添加</button>
   </div>
 
-  <div class="layout">
+  <div class="layout${editing ? ' editing' : ''}">
     <div class="list-card">`;
 
   if (items.length === 0) {
@@ -1338,7 +1351,7 @@ async function handleVault(env, session, request, url) {
           <tbody>`;
     for (const item of items) {
       const rid = Number(item.id);
-      body += `<tr class="${editing && rid === editId ? 'active' : ''}">
+      body += `<tr data-open="vault.php?edit=${rid}" class="${editing && rid === editId ? 'active' : ''}">
                 <td class="seq-cell" title="序号 ${seqNo(Number(item.seq))}">${seqNo(Number(item.seq))}</td>
                 <td><a class="site-link" href="vault.php?edit=${rid}">${h(item.name)}</a></td>
                 <td class="meta-cell">
@@ -1370,6 +1383,7 @@ async function handleVault(env, session, request, url) {
   } else {
     const vseq = await vaultItemSeq(db, editId);
     body += `<div class="editor">
+      <a class="back-to-list" href="vault.php">&larr; 返回列表</a>
       <div class="editor-head">
         <span class="seq-badge">序号 ${seqNo(vseq)}</span>
         <span class="who">${h(editing.name)}</span>
