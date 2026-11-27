@@ -7,7 +7,7 @@
 
 ## PHP 版（在 Releases 里）
 
-本仓库是 Cloudflare Workers 版。原版的 **PHP + SQLite 实现**打包放在 [Releases](https://github.com/tyrains/infosys/releases) 里（`infosys-php-v1.0.0.zip`），功能与本版一致：要求 PHP 8.1+（启用 `pdo_sqlite`、`openssl`），**解压后在 PHP 环境下可直接运行**——放进任意 PHP 站点目录即可，或在解压目录执行 `php -S localhost:8000` 用浏览器打开。数据存本地 `data/` 下的 SQLite 文件，包内不含数据库，首次打开自动建库，默认密码同为 `123`。有自己的 PHP 主机、不想用 Cloudflare 的，选这个包。
+本仓库是 Cloudflare Workers 版。原版的 **PHP + SQLite 实现**打包放在 [Releases](https://github.com/tyrains/infosys/releases) 里（`infosys-php-v1.1.0.zip`），功能与本版一致：要求 PHP 8.1+（启用 `pdo_sqlite`、`openssl`），**解压后在 PHP 环境下可直接运行**——放进任意 PHP 站点目录即可，或在解压目录执行 `php -S localhost:8000` 用浏览器打开。数据存本地 `data/` 下的 SQLite 文件，包内不含数据库，首次打开自动建库，默认密码同为 `123`。有自己的 PHP 主机、不想用 Cloudflare 的，选这个包。
 
 ## 首次登录
 
