@@ -212,6 +212,10 @@ async function initDb(db) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL, note_enc TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS note_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL, note_enc TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT '', updated_at TEXT NOT NULL DEFAULT '')`),
     db.prepare(`CREATE TABLE IF NOT EXISTS sessions (
       id TEXT PRIMARY KEY, data TEXT NOT NULL, expires_at INTEGER NOT NULL)`),
   ]);
@@ -425,6 +429,62 @@ async function updateVaultItem(db, id, name, noteEnc, now) {
 
 async function deleteVaultItem(db, id) {
   await db.prepare('DELETE FROM vault_items WHERE id = ?').bind(id).run();
+}
+
+/* ---- 随手记录（结构与私密信息完全一致，备注同样加密存储） ---- */
+
+async function countNoteItems(db, q) {
+  if (q === '') {
+    const row = await db.prepare('SELECT COUNT(*) AS c FROM note_items').first();
+    return row ? Number(row.c) : 0;
+  }
+  const row = await db
+    .prepare('SELECT COUNT(*) AS c FROM note_items WHERE name LIKE ?')
+    .bind('%' + q + '%')
+    .first();
+  return row ? Number(row.c) : 0;
+}
+
+async function listNoteItems(db, q, limit, offset) {
+  let sql =
+    'SELECT v.*, (SELECT COUNT(*) FROM note_items v2 WHERE v2.id <= v.id) AS seq FROM note_items v';
+  const params = [];
+  if (q !== '') {
+    sql += ' WHERE name LIKE ?';
+    params.push('%' + q + '%');
+  }
+  sql += ' ORDER BY v.id DESC';
+  if (limit > 0) sql += ` LIMIT ${Math.trunc(limit)} OFFSET ${Math.trunc(offset)}`;
+  const { results } = await db.prepare(sql).bind(...params).all();
+  return results;
+}
+
+async function getNoteItem(db, id) {
+  return db.prepare('SELECT * FROM note_items WHERE id = ?').bind(id).first();
+}
+
+async function noteItemSeq(db, id) {
+  const row = await db.prepare('SELECT COUNT(*) AS c FROM note_items WHERE id <= ?').bind(id).first();
+  return row ? Number(row.c) : 0;
+}
+
+async function insertNoteItem(db, name, noteEnc, now) {
+  const r = await db
+    .prepare('INSERT INTO note_items (name, note_enc, created_at, updated_at) VALUES (?, ?, ?, ?)')
+    .bind(name, noteEnc, now, now)
+    .run();
+  return Number(r.meta.last_row_id);
+}
+
+async function updateNoteItem(db, id, name, noteEnc, now) {
+  await db
+    .prepare('UPDATE note_items SET name = ?, note_enc = ?, updated_at = ? WHERE id = ?')
+    .bind(name, noteEnc, now, id)
+    .run();
+}
+
+async function deleteNoteItem(db, id) {
+  await db.prepare('DELETE FROM note_items WHERE id = ?').bind(id).run();
 }
 
 /* ================= 会话存储 =================
@@ -948,6 +1008,7 @@ async function handleIndex(env, session, request, url) {
   <nav class="tabs" aria-label="模块导航">
     <a href="index.php" class="on" aria-current="page">账号提示</a>
     <a href="vault.php">私密信息</a>
+    <a href="notes.php">随手记录</a>
   </nav>
 
   <div class="toolbar">
@@ -1323,6 +1384,7 @@ async function handleVault(env, session, request, url) {
   <nav class="tabs" aria-label="模块导航">
     <a href="index.php">账号提示</a>
     <a href="vault.php" class="on" aria-current="page">私密信息</a>
+    <a href="notes.php">随手记录</a>
   </nav>
 
   <div class="toolbar">
@@ -1446,6 +1508,276 @@ async function handleVault(env, session, request, url) {
       <div class="field">
         <label for="add_vnote">备注</label>
         <textarea id="add_vnote" name="note" rows="10" autocomplete="off">${h(addPlain)}</textarea>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="btn btn-primary">保存</button>
+        <button type="button" class="btn" data-close-add>取消</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+${MODAL_SCRIPT(isAdd)}
+</body></html>`;
+  return htmlResponse(session, body);
+}
+
+/* ================= 随手记录页（notes.php） ================= */
+
+async function handleNotes(env, session, request, url) {
+  const db = env.DB;
+  if (!session.loggedIn) return redirectResponse(session, 'index.php');
+
+  if (request.method === 'POST') {
+    const form = await request.formData();
+    if (csrfBlocked(session, form)) return csrfFailResponse(session);
+    const action = String(form.get('action') || '');
+
+    if (action === 'theme') {
+      const wanted = String(form.get('theme') || '');
+      if (wanted === 'normal' || wanted === 'claude') await setSetting(db, 'theme', wanted);
+      return redirectResponse(session, 'notes.php');
+    }
+
+    if (action === 'delete') {
+      const rid = parseInt(form.get('id') || '0', 10) || 0;
+      if (rid > 0) await deleteNoteItem(db, rid);
+      session.flashSet('已删除随手记录。');
+      return redirectResponse(session, 'notes.php');
+    }
+
+    if (action === 'save') {
+      const id = parseInt(form.get('id') || '0', 10) || 0;
+      const back = id > 0 ? 'notes.php?edit=' + id : 'notes.php?add=1';
+      const name = String(form.get('name') || '').trim();
+      const note = String(form.get('note') || '');
+      const errs = [];
+
+      if (await vaultDefaultPassword(db)) errs.push('请先修改默认密码，再保存随手记录。');
+      if (!vaultHasDk(session)) errs.push('数据密钥未加载，请退出后重新登录。');
+      if (name === '') errs.push('名称不能为空：请填写一个标题。');
+
+      if (errs.length > 0) {
+        session.data.note_form_state = { id, name, note, errors: errs };
+        return redirectResponse(session, back);
+      }
+
+      const now = nowStr();
+      if (id > 0) {
+        const old = await getNoteItem(db, id);
+        if (!old) {
+          session.flashSet('这条随手记录不存在，可能已被删除。', 'err');
+          return redirectResponse(session, 'notes.php');
+        }
+        const enc = await vaultEncrypt(session, note);
+        await updateNoteItem(db, id, name, enc, now);
+        session.flashSet('已保存。');
+        return redirectResponse(session, 'notes.php?edit=' + id);
+      }
+      const enc = await vaultEncrypt(session, note);
+      const newId = await insertNoteItem(db, name, enc, now);
+      session.flashSet('已添加随手记录。');
+      return redirectResponse(session, 'notes.php?edit=' + newId);
+    }
+    return redirectResponse(session, 'notes.php');
+  }
+
+  /* GET */
+  const theme = await getTheme(db);
+  const site = await siteName(db);
+  const flash = session.flashTake();
+  const dkReady = vaultHasDk(session);
+  const q = (url.searchParams.get('q') || '').trim();
+  const size = await pageSize(db);
+  let page = normalizePage(url.searchParams.get('p') || '1');
+  const matched = await countNoteItems(db, q);
+  const pages = totalPages(matched, size);
+  if (page > pages) page = pages;
+  const items = await listNoteItems(db, q, size, (page - 1) * size);
+
+  const editId = parseInt(url.searchParams.get('edit') || '0', 10) || 0;
+  const isAdd = url.searchParams.has('add');
+  let editing = editId > 0 ? await getNoteItem(db, editId) : null;
+  if (editId > 0 && !editing) return redirectResponse(session, 'notes.php');
+
+  const state = session.data.note_form_state || null;
+  delete session.data.note_form_state;
+
+  let editName = '';
+  let editPlain = '';
+  let editErrors = [];
+  if (editing) {
+    editName = String(editing.name);
+    const dec = await vaultDecrypt(session, String(editing.note_enc));
+    editPlain = dec === null ? '' : dec;
+  }
+  let addName = '';
+  let addPlain = '';
+  let addErrors = [];
+  if (state && typeof state === 'object') {
+    const stateId = Number(state.id) || 0;
+    const errs = Array.isArray(state.errors) ? state.errors : [];
+    if (stateId > 0 && stateId === editId) {
+      editName = String(state.name ?? '');
+      editPlain = String(state.note ?? '');
+      editErrors = errs;
+    } else if (stateId === 0 && isAdd) {
+      addName = String(state.name ?? '');
+      addPlain = String(state.note ?? '');
+      addErrors = errs;
+    }
+  }
+
+  const isDefault = (await getSetting(db, 'is_default_pw')) === '1';
+  const errList = (errs) =>
+    errs.length
+      ? `<span class="err">${errs.map((e) => `<span>${h(e)}</span>`).join('')}</span>`
+      : '';
+
+  let body = htmlHead(theme, '随手记录 · ' + site);
+  body += '<div class="wrap">\n';
+  if (isDefault) body += defaultPwNotice('<span>默认密码下不能保存随手记录</span>');
+  body += `<div class="topbar">
+    <div class="brand"><h1>${starSvg()}${h(site)}</h1></div>
+    <div class="top-right">
+      <div class="top-actions">
+        ${themeForm(session, 'notes.php', theme)}
+        <a class="btn" href="settings.php">设置</a>
+        ${logoutForm(session)}
+      </div>
+      ${flash ? flashHtml(flash, 'flash top-flash') : ''}
+      ${!dkReady ? '<div class="flash top-flash err">数据密钥未加载，请退出后重新登录。</div>' : ''}
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="模块导航">
+    <a href="index.php">账号提示</a>
+    <a href="vault.php">私密信息</a>
+    <a href="notes.php" class="on" aria-current="page">随手记录</a>
+  </nav>
+
+  <div class="toolbar">
+    <form method="get" action="notes.php" class="filter-form" id="filterForm">
+      <label for="q" class="sr-only">搜索名称</label>
+      <div class="search-box">
+        ${searchSvg()}
+        <input id="q" name="q" value="${h(q)}" placeholder="搜索名称" autocomplete="off">
+      </div>
+      <button type="submit" class="btn">搜索</button>
+      ${q !== '' ? '<a class="btn" href="notes.php">清除</a>' : ''}
+    </form>
+    <button type="button" class="btn btn-primary" data-open-add>添加</button>
+  </div>
+
+  <div class="layout${editing ? ' editing' : ''}">
+    <div class="list-card">`;
+
+  if (items.length === 0) {
+    body += '<div class="empty">还没有随手记录，点「添加」记下第一条。</div>';
+  } else {
+    body += `<table class="entries vault-table">
+          <thead>
+            <tr><th>序号</th><th>名称</th><th>修改于</th></tr>
+          </thead>
+          <tbody>`;
+    for (const item of items) {
+      const rid = Number(item.id);
+      body += `<tr data-open="notes.php?edit=${rid}" class="${editing && rid === editId ? 'active' : ''}">
+                <td class="seq-cell" title="序号 ${seqNo(Number(item.seq))}">${seqNo(Number(item.seq))}</td>
+                <td><a class="site-link" href="notes.php?edit=${rid}">${h(item.name)}</a></td>
+                <td class="meta-cell">
+                  ${h(dateOnly(String(item.updated_at)))}
+                  <a class="edit-link" href="notes.php?edit=${rid}">编辑</a>
+                  <form method="post" action="notes.php" class="row-form"
+                        onsubmit="return confirm('确定删除这条随手记录吗？删除后无法恢复。');">
+                    ${csrfInput(session)}
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="id" value="${rid}">
+                    <button type="submit" class="row-del">删除</button>
+                  </form>
+                </td>
+              </tr>`;
+    }
+    body += '</tbody></table>';
+  }
+  const pagerParams = {};
+  if (q !== '') pagerParams.q = q;
+  body += pagerHtml(page, pages, matched, pagerParams, 'notes.php');
+  body += '</div>'; // list-card
+
+  if (!editing) {
+    body += `<div class="editor editor-empty">
+        <div class="empty-mark" aria-hidden="true">&#9998;</div>
+        <h2>等待编辑</h2>
+        <p>在左侧选择一条随手记录进行修改，<br>或点击上方「添加」新建一条。</p>
+      </div>`;
+  } else {
+    const nseq = await noteItemSeq(db, editId);
+    body += `<div class="editor">
+      <a class="back-to-list" href="notes.php">&larr; 返回列表</a>
+      <div class="editor-head">
+        <span class="seq-badge">序号 ${seqNo(nseq)}</span>
+        <span class="who">${h(editing.name)}</span>
+      </div>
+
+      <form method="post" action="notes.php" id="saveForm">
+        ${csrfInput(session)}
+        <input type="hidden" name="action" value="save">
+        <input type="hidden" name="id" value="${editId}">
+
+        <div class="field">
+          <label for="nname">名称</label>
+          <input type="text" id="nname" name="name" value="${h(editName)}" autocomplete="off" required>
+          <div class="desc">名称写个标题，网上看到的东西随手粘贴到备注里。</div>
+          ${errList(editErrors)}
+        </div>
+
+        <div class="field">
+          <label for="nnote">备注</label>
+          <textarea id="nnote" name="note" rows="16" autocomplete="off">${h(editPlain)}</textarea>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="btn btn-primary">保存</button>
+          <a class="btn" href="notes.php">取消</a>
+          <button type="submit" class="btn btn-danger" form="deleteFormN">删除</button>
+        </div>
+      </form>
+    </div>
+
+    <form id="deleteFormN" method="post" action="notes.php"
+          onsubmit="return confirm('确定删除这条随手记录吗？删除后无法恢复。');">
+      ${csrfInput(session)}
+      <input type="hidden" name="action" value="delete">
+      <input type="hidden" name="id" value="${editId}">
+    </form>`;
+  }
+
+  body += `</div></div>
+
+<div class="modal" id="addModal" role="dialog" aria-modal="true" aria-labelledby="addModalTitle" hidden>
+  <div class="modal-backdrop" data-close-add></div>
+  <div class="modal-dialog">
+    <div class="modal-head">
+      <h2 id="addModalTitle">添加随手记录</h2>
+      <button type="button" class="modal-close" data-close-add aria-label="关闭">&times;</button>
+    </div>
+    <form method="post" action="notes.php" id="addForm">
+      ${csrfInput(session)}
+      <input type="hidden" name="action" value="save">
+      <input type="hidden" name="id" value="0">
+
+      <div class="field">
+        <label for="add_nname">名称</label>
+        <input type="text" id="add_nname" name="name" value="${h(addName)}" autocomplete="off" required autofocus>
+        <div class="desc">名称写个标题，网上看到的东西随手粘贴到备注里。</div>
+        ${errList(addErrors)}
+      </div>
+
+      <div class="field">
+        <label for="add_nnote">备注</label>
+        <textarea id="add_nnote" name="note" rows="10" autocomplete="off">${h(addPlain)}</textarea>
       </div>
 
       <div class="actions">
@@ -1922,7 +2254,7 @@ export default {
     }
     if (path === '/favicon.ico') return new Response(null, { status: 204 });
 
-    const known = ['/', '/index.php', '/vault.php', '/settings.php', '/backup.php'];
+    const known = ['/', '/index.php', '/vault.php', '/notes.php', '/settings.php', '/backup.php'];
     if (!known.includes(path)) return new Response('Not Found', { status: 404 });
 
     await initDb(env.DB);
@@ -1933,6 +2265,7 @@ export default {
     if (path === '/' && request.method === 'GET') return redirectResponse(session, 'index.php');
     if (path === '/index.php' || path === '/') return handleIndex(env, session, request, url);
     if (path === '/vault.php') return handleVault(env, session, request, url);
+    if (path === '/notes.php') return handleNotes(env, session, request, url);
     if (path === '/settings.php') return handleSettings(env, session, request);
     return handleBackup(env, session, request, url);
   },

@@ -37,6 +37,14 @@ CREATE TABLE IF NOT EXISTS vault_items (
   updated_at TEXT NOT NULL DEFAULT ''
 );
 
+CREATE TABLE IF NOT EXISTS note_items (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  note_enc   TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+
 -- 会话表（绑定 KV 命名空间 SESSIONS 时不使用此表，会话自动改走 KV）
 CREATE TABLE IF NOT EXISTS sessions (
   id         TEXT PRIMARY KEY,
